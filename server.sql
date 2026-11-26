@@ -126,9 +126,16 @@ CREATE TABLE ItemNotaFiscal (
     nota_fiscal_numero INT NOT NULL,
     produto_codigo VARCHAR(10) NOT NULL,
     quantidade INT NOT NULL,
+    preco_unitario DECIMAL(10,2) NOT NULL,
 
     CONSTRAINT PK_ItemNotaFiscal
         PRIMARY KEY (nota_fiscal_numero, produto_codigo),
+
+    CONSTRAINT CK_ItemNotaFiscal_Quantidade
+        CHECK (quantidade > 0),
+
+    CONSTRAINT CK_ItemNotaFiscal_Preco
+        CHECK (preco_unitario >= 0),
 
     CONSTRAINT FK_Item_NotaFiscal
         FOREIGN KEY (nota_fiscal_numero)
@@ -138,6 +145,28 @@ CREATE TABLE ItemNotaFiscal (
         FOREIGN KEY (produto_codigo)
         REFERENCES Produto(codigo)
 );
+GO
+
+
+-- Impede a inclusao ou alteracao de itens com produtos inativos.
+CREATE TRIGGER TR_ItemNotaFiscal_ProdutoAtivo
+ON ItemNotaFiscal
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN Produto p
+            ON p.codigo = i.produto_codigo
+        WHERE p.ativo = 0
+    )
+    BEGIN
+        THROW 50001, 'Nao e permitido vender produtos inativos.', 1;
+    END;
+END;
 GO
 
 
@@ -185,13 +214,13 @@ GO
 INSERT INTO AlocacaoVeiculo
     (data, veiculo_codigo, vendedor_codigo)
 VALUES
-    ('2026-08-20', 'VE01', 'V01'),
-    ('2026-08-21', 'VE01', 'V01'),
-    ('2026-08-20', 'VE02', 'V03'),
-    ('2026-08-25', 'VE03', 'V04'),
-    ('2026-09-01', 'VE01', 'V02'),
-    ('2026-09-02', 'VE02', 'V03'),
-    ('2026-09-10', 'VE03', 'V04');
+    (DATEADD(DAY, -10, CAST(GETDATE() AS DATE)), 'VE01', 'V01'),
+    (DATEADD(DAY, -5, CAST(GETDATE() AS DATE)), 'VE01', 'V01'),
+    (DATEADD(DAY, -10, CAST(GETDATE() AS DATE)), 'VE02', 'V03'),
+    (DATEADD(DAY, -2, CAST(GETDATE() AS DATE)), 'VE03', 'V04'),
+    (DATEADD(MONTH, -2, CAST(GETDATE() AS DATE)), 'VE01', 'V02'),
+    (DATEADD(MONTH, -2, CAST(GETDATE() AS DATE)), 'VE02', 'V03'),
+    (DATEADD(MONTH, -1, CAST(GETDATE() AS DATE)), 'VE03', 'V04');
 GO
 
 
@@ -231,15 +260,15 @@ GO
 
 -- Itens das notas fiscais
 INSERT INTO ItemNotaFiscal
-    (nota_fiscal_numero, produto_codigo, quantidade)
+    (nota_fiscal_numero, produto_codigo, quantidade, preco_unitario)
 VALUES
-    (1001, 'PR01', 3),
-    (1001, 'PR02', 2),
-    (1002, 'PR04', 1),
-    (1002, 'PR05', 5),
-    (1003, 'PR01', 1),
-    (1004, 'PR03', 4),
-    (1004, 'PR04', 2);
+    (1001, 'PR01', 3, 25.90),
+    (1001, 'PR02', 2, 23.50),
+    (1002, 'PR04', 1, 89.90),
+    (1002, 'PR05', 5, 15.00),
+    (1003, 'PR01', 1, 25.90),
+    (1004, 'PR03', 4, 18.00),
+    (1004, 'PR04', 2, 89.90);
 GO
 
 
@@ -279,6 +308,7 @@ INNER JOIN Vendedor ve
 INNER JOIN Veiculo vc
     ON vc.codigo = av.veiculo_codigo
 WHERE av.data >= DATEADD(MONTH, -1, CAST(GETDATE() AS DATE))
+  AND av.data < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
 ORDER BY
     ve.nome,
     av.data;
